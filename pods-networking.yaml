@@ -1,0 +1,982 @@
+# =============================================================================
+# 1. POD WITH CONTAINER PORTS
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-ports
+  labels:
+    app: web
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+          name: http
+          protocol: TCP
+        - containerPort: 443
+          name: https
+          protocol: TCP
+---
+# =============================================================================
+# 2. SERVICE - CLUSTERIP (Default)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-clusterip
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+---
+# =============================================================================
+# 3. SERVICE - CLUSTERIP WITH NAMED PORT
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-clusterip-named
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  ports:
+    - name: http
+      port: 80
+      targetPort: http      # References containerPort name
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: https
+      protocol: TCP
+---
+# =============================================================================
+# 4. SERVICE - NODEPORT
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-nodeport
+spec:
+  type: NodePort
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080       # Range: 30000-32767
+      protocol: TCP
+---
+# =============================================================================
+# 5. SERVICE - LOADBALANCER
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-loadbalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+spec:
+  type: LoadBalancer
+  selector:
+    app: web
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+  loadBalancerSourceRanges:
+    - 10.0.0.0/8
+    - 192.168.0.0/16
+---
+# =============================================================================
+# 6. SERVICE - EXTERNALNAME (DNS alias)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-externalname
+spec:
+  type: ExternalName
+  externalName: database.example.com
+---
+# =============================================================================
+# 7. SERVICE - HEADLESS (For StatefulSets)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-headless
+spec:
+  type: ClusterIP
+  clusterIP: None           # Makes it headless
+  selector:
+    app: database
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+# =============================================================================
+# 8. SERVICE - MULTI-PORT
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-multiport
+spec:
+  type: ClusterIP
+  selector:
+    app: myapp
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: https
+      port: 443
+      targetPort: 8443
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+---
+# =============================================================================
+# 9. SERVICE - WITHOUT SELECTOR (Manual endpoints)
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-external-db
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: svc-external-db     # Must match service name
+subsets:
+  - addresses:
+      - ip: 192.168.1.100
+      - ip: 192.168.1.101
+    ports:
+      - port: 3306
+---
+# =============================================================================
+# 10. SERVICE - WITH SESSION AFFINITY
+# =============================================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: svc-session-affinity
+spec:
+  type: ClusterIP
+  selector:
+    app: web
+  sessionAffinity: ClientIP
+  sessionAffinityConfig:
+    clientIP:
+      timeoutSeconds: 10800   # 3 hours
+  ports:
+    - port: 80
+      targetPort: 80
+---
+# =============================================================================
+# 11. POD WITH HOSTNAME AND SUBDOMAIN (DNS A record)
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-dns-record
+  labels:
+    app: web
+spec:
+  hostname: mypod
+  subdomain: svc-headless    # Must match headless service name
+  containers:
+    - name: nginx
+      image: nginx:1.25
+# DNS: mypod.svc-headless.default.svc.cluster.local
+---
+# =============================================================================
+# 12. POD WITH CUSTOM DNS CONFIG
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-custom-dns
+spec:
+  dnsPolicy: None
+  dnsConfig:
+    nameservers:
+      - 8.8.8.8
+      - 8.8.4.4
+    searches:
+      - my-namespace.svc.cluster.local
+      - svc.cluster.local
+      - cluster.local
+    options:
+      - name: ndots
+        value: "5"
+      - name: timeout
+        value: "3"
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 13. POD WITH DNS POLICY OPTIONS
+# =============================================================================
+# dnsPolicy: ClusterFirst (default) - use cluster DNS
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-dns-clusterfirst
+spec:
+  dnsPolicy: ClusterFirst
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# dnsPolicy: ClusterFirstWithHostNet - cluster DNS with hostNetwork
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-dns-hostnet
+spec:
+  hostNetwork: true
+  dnsPolicy: ClusterFirstWithHostNet
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# dnsPolicy: Default - inherit from node
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-dns-default
+spec:
+  dnsPolicy: Default
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 14. POD WITH HOST NETWORK
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-host-network
+spec:
+  hostNetwork: true
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+          hostPort: 80
+---
+# =============================================================================
+# 15. POD WITH HOST PORTS
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-host-port
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+          hostPort: 8080      # Exposed on node:8080
+          protocol: TCP
+---
+# =============================================================================
+# 16. NETWORKPOLICY - DENY ALL INGRESS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: default
+spec:
+  podSelector: {}             # Applies to all pods
+  policyTypes:
+    - Ingress
+  # No ingress rules = deny all ingress
+---
+# =============================================================================
+# 17. NETWORKPOLICY - DENY ALL EGRESS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all-egress
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  # No egress rules = deny all egress
+---
+# =============================================================================
+# 18. NETWORKPOLICY - ALLOW ALL INGRESS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-all-ingress
+  namespace: default
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - {}                      # Empty rule = allow all
+---
+# =============================================================================
+# 19. NETWORKPOLICY - ALLOW SPECIFIC PODS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+---
+# =============================================================================
+# 20. NETWORKPOLICY - ALLOW FROM NAMESPACE
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-namespace
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: api
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              environment: production
+      ports:
+        - protocol: TCP
+          port: 443
+---
+# =============================================================================
+# 21. NETWORKPOLICY - ALLOW FROM IP BLOCK (CIDR)
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-cidr
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: web
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+            except:
+              - 10.0.1.0/24
+      ports:
+        - protocol: TCP
+          port: 80
+---
+# =============================================================================
+# 22. NETWORKPOLICY - EGRESS TO SPECIFIC DESTINATION
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-egress-to-db
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: database
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow DNS
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+---
+# =============================================================================
+# 23. NETWORKPOLICY - COMBINED INGRESS AND EGRESS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-policy
+  namespace: default
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: database
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# =============================================================================
+# 24. INGRESS - BASIC
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-basic
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: svc-clusterip
+                port:
+                  number: 80
+---
+# =============================================================================
+# 25. INGRESS - MULTIPLE PATHS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-multi-path
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 8080
+          - path: /web
+            pathType: Prefix
+            backend:
+              service:
+                name: web-service
+                port:
+                  number: 80
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: default-service
+                port:
+                  number: 80
+---
+# =============================================================================
+# 26. INGRESS - MULTIPLE HOSTS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-multi-host
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 8080
+    - host: web.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web-service
+                port:
+                  number: 80
+---
+# =============================================================================
+# 27. INGRESS - WITH TLS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-tls
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - secure.example.com
+      secretName: tls-secret
+  rules:
+    - host: secure.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: secure-service
+                port:
+                  number: 443
+---
+# =============================================================================
+# 28. INGRESS - DEFAULT BACKEND
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-default-backend
+spec:
+  ingressClassName: nginx
+  defaultBackend:
+    service:
+      name: default-service
+      port:
+        number: 80
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: api-service
+                port:
+                  number: 8080
+---
+# =============================================================================
+# 29. INGRESS - PATH TYPES (Exact, Prefix, ImplementationSpecific)
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-path-types
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: myapp.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Exact           # Only matches /api exactly
+            backend:
+              service:
+                name: api-exact
+                port:
+                  number: 8080
+          - path: /api/
+            pathType: Prefix          # Matches /api/*
+            backend:
+              service:
+                name: api-prefix
+                port:
+                  number: 8080
+---
+# =============================================================================
+# 30. INGRESSCLASS
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: IngressClass
+metadata:
+  name: nginx
+  annotations:
+    ingressclass.kubernetes.io/is-default-class: "true"
+spec:
+  controller: k8s.io/ingress-nginx
+---
+# =============================================================================
+# 31. GATEWAY API - GATEWAY (New in CKA 2025)
+# =============================================================================
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: my-gateway
+  namespace: default
+spec:
+  gatewayClassName: nginx
+  listeners:
+    - name: http
+      protocol: HTTP
+      port: 80
+      hostname: "*.example.com"
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      protocol: HTTPS
+      port: 443
+      hostname: "*.example.com"
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - name: tls-secret
+      allowedRoutes:
+        namespaces:
+          from: Same
+---
+# =============================================================================
+# 32. GATEWAY API - HTTPROUTE
+# =============================================================================
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-route
+  namespace: default
+spec:
+  parentRefs:
+    - name: my-gateway
+  hostnames:
+    - "api.example.com"
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v1
+      backendRefs:
+        - name: api-v1-service
+          port: 8080
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/v2
+      backendRefs:
+        - name: api-v2-service
+          port: 8080
+---
+# =============================================================================
+# 33. GATEWAY API - HTTPROUTE WITH HEADERS
+# =============================================================================
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: http-route-headers
+spec:
+  parentRefs:
+    - name: my-gateway
+  hostnames:
+    - "api.example.com"
+  rules:
+    - matches:
+        - headers:
+            - name: X-Version
+              value: beta
+      backendRefs:
+        - name: api-beta-service
+          port: 8080
+    - backendRefs:
+        - name: api-stable-service
+          port: 8080
+---
+# =============================================================================
+# 34. GATEWAY API - GATEWAYCLASS
+# =============================================================================
+apiVersion: gateway.networking.k8s.io/v1
+kind: GatewayClass
+metadata:
+  name: nginx
+spec:
+  controllerName: nginx.org/gateway-controller
+---
+# =============================================================================
+# 35. COREDNS CONFIGMAP - DNS Configuration
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+            lameduck 5s
+        }
+        ready
+        kubernetes cluster.local in-addr.arpa ip6.arpa {
+            pods insecure
+            fallthrough in-addr.arpa ip6.arpa
+            ttl 30
+        }
+        prometheus :9153
+        forward . /etc/resolv.conf {
+            max_concurrent 1000
+        }
+        cache 30
+        loop
+        reload
+        loadbalance
+    }
+    # Custom domain
+    example.local:53 {
+        errors
+        cache 30
+        forward . 10.0.0.53
+    }
+---
+# =============================================================================
+# 36. ENDPOINTSLICE - Modern alternative to Endpoints
+# =============================================================================
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: my-service-abc
+  labels:
+    kubernetes.io/service-name: my-service
+addressType: IPv4
+endpoints:
+  - addresses:
+      - "10.1.2.3"
+    conditions:
+      ready: true
+      serving: true
+      terminating: false
+    nodeName: worker-1
+  - addresses:
+      - "10.1.2.4"
+    conditions:
+      ready: true
+ports:
+  - name: http
+    port: 80
+    protocol: TCP
+---
+# =============================================================================
+# 37. POD WITH MULTIPLE NETWORK INTERFACES (Multus)
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-multus
+  annotations:
+    k8s.v1.cni.cncf.io/networks: macvlan-conf
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+---
+# =============================================================================
+# 38. COMPREHENSIVE NETWORKING EXAMPLE - App with full networking
+# =============================================================================
+# Namespace with labels for NetworkPolicy
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: production
+  labels:
+    environment: production
+    team: backend
+---
+# Backend Pod
+apiVersion: v1
+kind: Pod
+metadata:
+  name: backend-pod
+  namespace: production
+  labels:
+    app: backend
+    tier: api
+spec:
+  hostname: backend
+  subdomain: backend-headless
+  containers:
+    - name: api
+      image: nginx:1.25
+      ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 9090
+          name: metrics
+      env:
+        - name: DB_HOST
+          value: "database-svc.production.svc.cluster.local"
+---
+# Headless Service for DNS
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-headless
+  namespace: production
+spec:
+  clusterIP: None
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+      name: http
+---
+# ClusterIP Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-svc
+  namespace: production
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+    - name: metrics
+      port: 9090
+      targetPort: 9090
+---
+# NetworkPolicy for backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-network-policy
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow from frontend pods
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+    # Allow from monitoring namespace
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: monitoring
+      ports:
+        - protocol: TCP
+          port: 9090
+  egress:
+    # Allow to database
+    - to:
+        - podSelector:
+            matchLabels:
+              app: database
+      ports:
+        - protocol: TCP
+          port: 5432
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# Ingress for external access
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: backend-ingress
+  namespace: production
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: api-tls-secret
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-svc
+                port:
+                  number: 80
