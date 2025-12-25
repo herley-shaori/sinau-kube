@@ -1,0 +1,1234 @@
+# ==============================================================================
+# WARUNG KOPI - Complete Kubernetes Configuration
+# ==============================================================================
+
+# 1. NAMESPACE
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: warung-kopi
+  labels:
+    app: warung-kopi
+    environment: production
+---
+# 2. RESOURCE QUOTA
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: warung-kopi-quota
+  namespace: warung-kopi
+spec:
+  hard:
+    requests.cpu: "4"
+    requests.memory: 4Gi
+    limits.cpu: "8"
+    limits.memory: 8Gi
+    pods: "20"
+    persistentvolumeclaims: "5"
+    services: "10"
+    secrets: "10"
+    configmaps: "10"
+---
+# 3. LIMIT RANGE
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: warung-kopi-limits
+  namespace: warung-kopi
+spec:
+  limits:
+    - type: Container
+      default:
+        cpu: "500m"
+        memory: "256Mi"
+      defaultRequest:
+        cpu: "100m"
+        memory: "128Mi"
+      min:
+        cpu: "50m"
+        memory: "64Mi"
+      max:
+        cpu: "2"
+        memory: "1Gi"
+    - type: PersistentVolumeClaim
+      min:
+        storage: 100Mi
+      max:
+        storage: 10Gi
+---
+# 4. CONFIGMAP - App Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: warung-kopi
+data:
+  APP_NAME: "Warung Kopi"
+  APP_ENV: "production"
+  LOG_LEVEL: "info"
+  CACHE_TTL: "3600"
+  DB_HOST: "postgres"
+  DB_PORT: "5432"
+  DB_NAME: "warungkopi"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+---
+# 5. CONFIGMAP - Nginx Configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nginx-config
+  namespace: warung-kopi
+data:
+  nginx.conf: |
+    server {
+        listen 80;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html;
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+        location /health {
+            return 200 'OK';
+            add_header Content-Type text/plain;
+        }
+    }
+---
+# 6. SECRET - Database Credentials
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db-credentials
+  namespace: warung-kopi
+type: Opaque
+stringData:
+  POSTGRES_USER: admin
+  POSTGRES_PASSWORD: kopi-rahasia-123
+  POSTGRES_DB: warungkopi
+---
+# 7. SECRET - API Keys
+apiVersion: v1
+kind: Secret
+metadata:
+  name: api-keys
+  namespace: warung-kopi
+type: Opaque
+stringData:
+  JWT_SECRET: rahasia-jwt-warung-kopi-2024
+  PAYMENT_API_KEY: pk_live_payment_key_123
+---
+# 8. SECRET - TLS Certificate
+apiVersion: v1
+kind: Secret
+metadata:
+  name: tls-secret
+  namespace: warung-kopi
+type: kubernetes.io/tls
+stringData:
+  tls.crt: |
+    -----BEGIN CERTIFICATE-----
+    MIICpDCCAYwCCQDU+pQ4P3... (placeholder)
+    -----END CERTIFICATE-----
+  tls.key: |
+    -----BEGIN RSA PRIVATE KEY-----
+    MIIEowIBAAKCAQEA0Z3VS... (placeholder)
+    -----END RSA PRIVATE KEY-----
+---
+# 9. SECRET - Docker Registry
+apiVersion: v1
+kind: Secret
+metadata:
+  name: registry-credentials
+  namespace: warung-kopi
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: |
+    {"auths":{"registry.example.com":{"username":"user","password":"pass","auth":"dXNlcjpwYXNz"}}}
+---
+# 10. STORAGE CLASS
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: warung-kopi-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Retain
+---
+# 11. PERSISTENT VOLUME - Database
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: postgres-pv
+  labels:
+    type: local
+    app: postgres
+spec:
+  storageClassName: warung-kopi-storage
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  hostPath:
+    path: /data/postgres
+---
+# 12. PERSISTENT VOLUME - Redis
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: redis-pv
+  labels:
+    type: local
+    app: redis
+spec:
+  storageClassName: warung-kopi-storage
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Delete
+  hostPath:
+    path: /data/redis
+---
+# 13. PERSISTENT VOLUME CLAIM - Database
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: warung-kopi
+spec:
+  storageClassName: warung-kopi-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  selector:
+    matchLabels:
+      app: postgres
+---
+# 14. PERSISTENT VOLUME CLAIM - Redis
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-pvc
+  namespace: warung-kopi
+spec:
+  storageClassName: warung-kopi-storage
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  selector:
+    matchLabels:
+      app: redis
+---
+# 15. SERVICE ACCOUNT - Backend
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: warung-kopi
+automountServiceAccountToken: true
+---
+# 16. SERVICE ACCOUNT - Worker
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: worker-sa
+  namespace: warung-kopi
+---
+# 17. ROLE - Pod Reader
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+  namespace: warung-kopi
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+---
+# 18. ROLE - Secret Reader
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: secret-reader
+  namespace: warung-kopi
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+---
+# 19. ROLE BINDING - Backend
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-pod-reader
+  namespace: warung-kopi
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: warung-kopi
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# 20. ROLE BINDING - Worker
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: worker-secret-reader
+  namespace: warung-kopi
+subjects:
+  - kind: ServiceAccount
+    name: worker-sa
+    namespace: warung-kopi
+roleRef:
+  kind: Role
+  name: secret-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# 21. CLUSTER ROLE - Node Reader
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: node-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+# 22. CLUSTER ROLE BINDING
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backend-node-reader
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: warung-kopi
+roleRef:
+  kind: ClusterRole
+  name: node-reader
+  apiGroup: rbac.authorization.k8s.io
+---
+# 23. NETWORK POLICY - Default Deny All
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: warung-kopi
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+# 24. NETWORK POLICY - Allow DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-dns
+  namespace: warung-kopi
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+---
+# 25. NETWORK POLICY - Frontend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: frontend-policy
+  namespace: warung-kopi
+spec:
+  podSelector:
+    matchLabels:
+      app: frontend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 80
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: backend
+      ports:
+        - protocol: TCP
+          port: 3000
+---
+# 26. NETWORK POLICY - Backend
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-policy
+  namespace: warung-kopi
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - podSelector:
+            matchLabels:
+              app: redis
+      ports:
+        - protocol: TCP
+          port: 6379
+---
+# 27. NETWORK POLICY - Database
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-policy
+  namespace: warung-kopi
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+        - podSelector:
+            matchLabels:
+              app: worker
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+# 28. STATEFULSET - PostgreSQL
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: warung-kopi
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: postgres:15
+          ports:
+            - containerPort: 5432
+              name: postgres
+          envFrom:
+            - secretRef:
+                name: db-credentials
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "admin"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: warung-kopi-storage
+        resources:
+          requests:
+            storage: 5Gi
+---
+# 29. DEPLOYMENT - Redis
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: warung-kopi
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: redis-data
+              mountPath: /data
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 3
+      volumes:
+        - name: redis-data
+          persistentVolumeClaim:
+            claimName: redis-pvc
+---
+# 30. DEPLOYMENT - Backend API
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: warung-kopi
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+        version: v1
+    spec:
+      serviceAccountName: backend-sa
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z postgres 5432; do echo waiting for postgres; sleep 2; done"]
+      containers:
+        - name: backend
+          image: node:18-alpine
+          command: ["node", "server.js"]
+          ports:
+            - containerPort: 3000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: app-config
+            - secretRef:
+                name: api-keys
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: db-credentials
+                  key: POSTGRES_PASSWORD
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            successThreshold: 1
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 3000
+            failureThreshold: 30
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: logs
+              mountPath: /app/logs
+        - name: log-sidecar
+          image: busybox:1.36
+          command: ["sh", "-c", "tail -f /logs/app.log 2>/dev/null || sleep infinity"]
+          volumeMounts:
+            - name: logs
+              mountPath: /logs
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: backend
+                topologyKey: kubernetes.io/hostname
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: backend
+---
+# 31. DEPLOYMENT - Frontend
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: warung-kopi
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+        version: v1
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25-alpine
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "128Mi"
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: nginx.conf
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          securityContext:
+            allowPrivilegeEscalation: false
+      volumes:
+        - name: nginx-config
+          configMap:
+            name: nginx-config
+---
+# 32. REPLICASET - Legacy Worker (for demo, prefer Deployment)
+apiVersion: apps/v1
+kind: ReplicaSet
+metadata:
+  name: worker-legacy
+  namespace: warung-kopi
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: worker
+      tier: legacy
+  template:
+    metadata:
+      labels:
+        app: worker
+        tier: legacy
+    spec:
+      serviceAccountName: worker-sa
+      containers:
+        - name: worker
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo 'Processing legacy jobs...'; sleep 30; done"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+---
+# 33. DAEMONSET - Metrics Collector
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: metrics-collector
+  namespace: warung-kopi
+spec:
+  selector:
+    matchLabels:
+      app: metrics
+  template:
+    metadata:
+      labels:
+        app: metrics
+    spec:
+      tolerations:
+        - key: node-role.kubernetes.io/control-plane
+          operator: Exists
+          effect: NoSchedule
+        - key: node-role.kubernetes.io/master
+          operator: Exists
+          effect: NoSchedule
+      containers:
+        - name: metrics
+          image: busybox:1.36
+          command: ["sh", "-c", "while true; do echo \"$(date) - Node: $(hostname) - Collecting metrics\"; sleep 60; done"]
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "64Mi"
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+---
+# 34. JOB - Database Migration
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migration
+  namespace: warung-kopi
+spec:
+  ttlSecondsAfterFinished: 3600
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: migration
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          command: ["sh", "-c", "until nc -z postgres 5432; do sleep 2; done"]
+      containers:
+        - name: migrate
+          image: postgres:15
+          command: ["sh", "-c", "echo 'Running migrations...' && sleep 5 && echo 'Migrations complete!'"]
+          envFrom:
+            - secretRef:
+                name: db-credentials
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+---
+# 35. JOB - Parallel Data Import
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-import
+  namespace: warung-kopi
+spec:
+  completions: 5
+  parallelism: 2
+  completionMode: Indexed
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: importer
+          image: busybox:1.36
+          command: ["sh", "-c", "echo \"Importing batch $JOB_COMPLETION_INDEX\" && sleep 10"]
+          env:
+            - name: JOB_COMPLETION_INDEX
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['batch.kubernetes.io/job-completion-index']
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+---
+# 36. CRONJOB - Database Backup
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: db-backup
+  namespace: warung-kopi
+spec:
+  schedule: "0 2 * * *"
+  timeZone: "Asia/Jakarta"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  startingDeadlineSeconds: 600
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:15
+              command: ["sh", "-c", "echo 'Backing up database...' && sleep 5 && echo 'Backup complete!'"]
+              envFrom:
+                - secretRef:
+                    name: db-credentials
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+---
+# 37. CRONJOB - Cache Cleanup
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cache-cleanup
+  namespace: warung-kopi
+spec:
+  schedule: "*/30 * * * *"
+  concurrencyPolicy: Replace
+  suspend: false
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: cleanup
+              image: redis:7-alpine
+              command: ["redis-cli", "-h", "redis", "FLUSHDB"]
+              resources:
+                requests:
+                  cpu: "50m"
+                  memory: "32Mi"
+---
+# 38. SERVICE - PostgreSQL (Headless for StatefulSet)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: warung-kopi
+spec:
+  clusterIP: None
+  selector:
+    matchLabels:
+      app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+---
+# 39. SERVICE - Redis (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: warung-kopi
+spec:
+  type: ClusterIP
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+---
+# 40. SERVICE - Backend (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: warung-kopi
+spec:
+  type: ClusterIP
+  selector:
+    app: backend
+  ports:
+    - port: 3000
+      targetPort: 3000
+      name: http
+---
+# 41. SERVICE - Frontend (ClusterIP)
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: warung-kopi
+spec:
+  type: ClusterIP
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+---
+# 42. SERVICE - Frontend NodePort (External Access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-nodeport
+  namespace: warung-kopi
+spec:
+  type: NodePort
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+      name: http
+---
+# 43. SERVICE - LoadBalancer (Cloud Provider)
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-lb
+  namespace: warung-kopi
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+spec:
+  type: LoadBalancer
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+      name: http
+  externalTrafficPolicy: Local
+---
+# 44. SERVICE - ExternalName
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-api
+  namespace: warung-kopi
+spec:
+  type: ExternalName
+  externalName: api.payment-gateway.com
+---
+# 45. ENDPOINTS - External Database
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: external-db
+  namespace: warung-kopi
+subsets:
+  - addresses:
+      - ip: 192.168.1.100
+    ports:
+      - port: 5432
+        name: postgres
+---
+# 46. SERVICE - For External Endpoints
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-db
+  namespace: warung-kopi
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+      name: postgres
+---
+# 47. INGRESS - Main
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: warung-kopi-ingress
+  namespace: warung-kopi
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - warungkopi.local
+      secretName: tls-secret
+  rules:
+    - host: warungkopi.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
+---
+# 48. INGRESS - API Only
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-ingress
+  namespace: warung-kopi
+  annotations:
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.warungkopi.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 3000
+---
+# 49. HORIZONTAL POD AUTOSCALER - Backend
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: warung-kopi
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Percent
+          value: 10
+          periodSeconds: 60
+---
+# 50. HORIZONTAL POD AUTOSCALER - Frontend
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: frontend-hpa
+  namespace: warung-kopi
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: frontend
+  minReplicas: 3
+  maxReplicas: 15
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+---
+# 51. POD DISRUPTION BUDGET - Backend
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+  namespace: warung-kopi
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: backend
+---
+# 52. POD DISRUPTION BUDGET - Frontend
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: frontend-pdb
+  namespace: warung-kopi
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app: frontend
+---
+# 53. PRIORITY CLASS
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 1000000
+globalDefault: false
+description: "High priority for critical workloads"
+preemptionPolicy: PreemptLowerPriority
+---
+# 54. PRIORITY CLASS - Low
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority
+value: 100
+globalDefault: false
+description: "Low priority for batch jobs"
+preemptionPolicy: Never
+---
+# 55. POD - Debug/Troubleshooting
+apiVersion: v1
+kind: Pod
+metadata:
+  name: debug-pod
+  namespace: warung-kopi
+  labels:
+    app: debug
+spec:
+  containers:
+    - name: debug
+      image: busybox:1.36
+      command: ["sleep", "infinity"]
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "64Mi"
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true
+  restartPolicy: Never
+  terminationGracePeriodSeconds: 0
