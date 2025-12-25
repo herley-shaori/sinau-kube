@@ -1,0 +1,530 @@
+# =============================================================================
+# 1. SIMPLE POD - Basic pod definition
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: simple-pod
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 2. POD WITH NAMESPACE - Pod in specific namespace
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-namespace
+  namespace: development
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 3. POD WITH LABELS AND ANNOTATIONS - For organization and selection
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-labels
+  labels:
+    app: web
+    tier: frontend
+    environment: production
+  annotations:
+    description: "Frontend web server"
+    maintainer: "team-web@example.com"
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 4. POD WITH RESOURCE LIMITS AND REQUESTS - Critical for CKA/CKAD
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-resources
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      resources:
+        requests:
+          memory: "64Mi"
+          cpu: "250m"
+        limits:
+          memory: "128Mi"
+          cpu: "500m"
+---
+# =============================================================================
+# 5. POD WITH ENVIRONMENT VARIABLES
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-env
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      env:
+        - name: APP_ENV
+          value: "production"
+        - name: LOG_LEVEL
+          value: "info"
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+---
+# =============================================================================
+# 6. POD WITH CONFIGMAP AND SECRET REFERENCES
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-configmap-secret
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      env:
+        - name: CONFIG_VALUE
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: config-key
+        - name: SECRET_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secret
+              key: password
+      envFrom:
+        - configMapRef:
+            name: app-config
+        - secretRef:
+            name: app-secret
+---
+# =============================================================================
+# 7. POD WITH LIVENESS AND READINESS PROBES - Very important for exams
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-probes
+spec:
+  containers:
+    - name: nginx
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 15
+        periodSeconds: 10
+        timeoutSeconds: 5
+        failureThreshold: 3
+      readinessProbe:
+        httpGet:
+          path: /
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 5
+        successThreshold: 1
+---
+# =============================================================================
+# 8. POD WITH EXEC AND TCP PROBES
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-exec-probe
+spec:
+  containers:
+    - name: busybox
+      image: busybox:1.36
+      command: ["sh", "-c", "touch /tmp/healthy && sleep 3600"]
+      livenessProbe:
+        exec:
+          command:
+            - cat
+            - /tmp/healthy
+        initialDelaySeconds: 5
+        periodSeconds: 5
+      readinessProbe:
+        tcpSocket:
+          port: 8080
+        initialDelaySeconds: 5
+        periodSeconds: 10
+---
+# =============================================================================
+# 9. POD WITH STARTUP PROBE - For slow starting containers
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-startup-probe
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+      startupProbe:
+        httpGet:
+          path: /
+          port: 80
+        failureThreshold: 30
+        periodSeconds: 10
+      livenessProbe:
+        httpGet:
+          path: /
+          port: 80
+        periodSeconds: 10
+---
+# =============================================================================
+# 10. MULTI-CONTAINER POD - SIDECAR PATTERN
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-sidecar
+spec:
+  containers:
+    - name: main-app
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+    - name: sidecar-logger
+      image: busybox:1.36
+      command: ["sh", "-c", "while true; do echo 'Sidecar logging...'; sleep 10; done"]
+---
+# =============================================================================
+# 11. MULTI-CONTAINER POD - AMBASSADOR PATTERN
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-ambassador
+spec:
+  containers:
+    - name: main-app
+      image: nginx:1.25
+    - name: ambassador
+      image: haproxy:2.8
+---
+# =============================================================================
+# 12. MULTI-CONTAINER POD - ADAPTER PATTERN
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-adapter
+spec:
+  containers:
+    - name: main-app
+      image: nginx:1.25
+    - name: adapter
+      image: busybox:1.36
+      command: ["sh", "-c", "while true; do echo 'Transforming logs...'; sleep 30; done"]
+---
+# =============================================================================
+# 13. POD WITH INIT CONTAINER
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-init
+spec:
+  initContainers:
+    - name: init-setup
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'Initializing...' && sleep 5"]
+    - name: init-wait-service
+      image: busybox:1.36
+      command: ["sh", "-c", "until nslookup myservice; do echo waiting...; sleep 2; done"]
+  containers:
+    - name: main-app
+      image: nginx:1.25
+---
+# =============================================================================
+# 14. POD WITH NODE SELECTOR
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-nodeselector
+spec:
+  nodeSelector:
+    disktype: ssd
+    environment: production
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 15. POD WITH NODE AFFINITY
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-node-affinity
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: topology.kubernetes.io/zone
+                operator: In
+                values:
+                  - zone-a
+                  - zone-b
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          preference:
+            matchExpressions:
+              - key: disktype
+                operator: In
+                values:
+                  - ssd
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 16. POD WITH POD AFFINITY AND ANTI-AFFINITY
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-pod-affinity
+  labels:
+    app: cache
+spec:
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - web
+          topologyKey: kubernetes.io/hostname
+    podAntiAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - weight: 100
+          podAffinityTerm:
+            labelSelector:
+              matchLabels:
+                app: cache
+            topologyKey: kubernetes.io/hostname
+  containers:
+    - name: redis
+      image: redis:7
+---
+# =============================================================================
+# 17. POD WITH TOLERATIONS - For tainted nodes
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-tolerations
+spec:
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "gpu"
+      effect: "NoSchedule"
+    - key: "node.kubernetes.io/not-ready"
+      operator: "Exists"
+      effect: "NoExecute"
+      tolerationSeconds: 300
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 18. POD WITH SECURITY CONTEXT
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-security-context
+spec:
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 3000
+    fsGroup: 2000
+  containers:
+    - name: app
+      image: nginx:1.25
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        runAsNonRoot: true
+        capabilities:
+          drop:
+            - ALL
+---
+# =============================================================================
+# 19. POD WITH SERVICE ACCOUNT
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-serviceaccount
+spec:
+  serviceAccountName: my-service-account
+  automountServiceAccountToken: true
+  containers:
+    - name: app
+      image: nginx:1.25
+---
+# =============================================================================
+# 20. POD WITH COMMAND AND ARGS
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-command
+spec:
+  containers:
+    - name: busybox
+      image: busybox:1.36
+      command: ["/bin/sh"]
+      args: ["-c", "echo Hello Kubernetes! && sleep 3600"]
+---
+# =============================================================================
+# 21. POD WITH RESTART POLICY
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-restart-never
+spec:
+  restartPolicy: Never
+  containers:
+    - name: job-container
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'Job completed!' && exit 0"]
+---
+# =============================================================================
+# 22. POD WITH HOSTNAME AND SUBDOMAIN
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-hostname
+spec:
+  hostname: myhost
+  subdomain: mysubdomain
+  containers:
+    - name: nginx
+      image: nginx:1.25
+---
+# =============================================================================
+# 23. STATIC POD EXAMPLE (placed in /etc/kubernetes/manifests)
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: static-web
+  labels:
+    role: static-pod
+spec:
+  containers:
+    - name: web
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+---
+# =============================================================================
+# 24. COMPREHENSIVE POD - COMBINING MULTIPLE CONCEPTS
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: comprehensive-pod
+  namespace: production
+  labels:
+    app: myapp
+    tier: backend
+    version: v1.0.0
+  annotations:
+    description: "Comprehensive pod example for CKA/CKAD"
+spec:
+  serviceAccountName: app-service-account
+  restartPolicy: Always
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+  nodeSelector:
+    environment: production
+  tolerations:
+    - key: "dedicated"
+      operator: "Equal"
+      value: "app"
+      effect: "NoSchedule"
+  initContainers:
+    - name: init-check
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'Init complete'"]
+  containers:
+    - name: main-app
+      image: nginx:1.25
+      ports:
+        - containerPort: 80
+          name: http
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: APP_ENV
+          value: "production"
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "256Mi"
+      livenessProbe:
+        httpGet:
+          path: /healthz
+          port: 80
+        initialDelaySeconds: 30
+        periodSeconds: 10
+      readinessProbe:
+        httpGet:
+          path: /ready
+          port: 80
+        initialDelaySeconds: 5
+        periodSeconds: 5
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: false
+    - name: sidecar-logger
+      image: busybox:1.36
+      command: ["sh", "-c", "while true; do date; sleep 60; done"]
+      resources:
+        requests:
+          cpu: "50m"
+          memory: "32Mi"
+        limits:
+          cpu: "100m"
+          memory: "64Mi"
