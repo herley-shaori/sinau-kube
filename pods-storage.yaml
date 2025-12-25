@@ -1,0 +1,763 @@
+# =============================================================================
+# 1. POD WITH EMPTYDIR VOLUME - Temporary storage, deleted when pod dies
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-emptydir
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: cache-volume
+          mountPath: /cache
+  volumes:
+    - name: cache-volume
+      emptyDir: {}
+---
+# =============================================================================
+# 2. POD WITH EMPTYDIR (MEMORY BACKED) - Using RAM for storage
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-emptydir-memory
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: ram-volume
+          mountPath: /tmp/cache
+  volumes:
+    - name: ram-volume
+      emptyDir:
+        medium: Memory
+        sizeLimit: 100Mi
+---
+# =============================================================================
+# 3. POD WITH HOSTPATH VOLUME - Mount host filesystem
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-hostpath
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: host-data
+          mountPath: /data
+  volumes:
+    - name: host-data
+      hostPath:
+        path: /var/data
+        type: DirectoryOrCreate
+---
+# =============================================================================
+# 4. HOSTPATH TYPES - Different type options
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-hostpath-types
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: host-dir
+          mountPath: /data
+        - name: host-file
+          mountPath: /config/app.conf
+  volumes:
+    - name: host-dir
+      hostPath:
+        path: /var/data
+        type: Directory          # Must exist
+    - name: host-file
+      hostPath:
+        path: /etc/app.conf
+        type: FileOrCreate       # Create if not exists
+# hostPath types: DirectoryOrCreate, Directory, FileOrCreate, File, Socket, CharDevice, BlockDevice
+---
+# =============================================================================
+# 5. PERSISTENTVOLUME (PV) - Cluster-level storage resource
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-hostpath
+  labels:
+    type: local
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: manual
+  hostPath:
+    path: /mnt/data
+---
+# =============================================================================
+# 6. PERSISTENTVOLUME WITH NFS
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-nfs
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Recycle
+  storageClassName: nfs
+  nfs:
+    server: nfs-server.example.com
+    path: /exports/data
+---
+# =============================================================================
+# 7. PERSISTENTVOLUMECLAIM (PVC) - Request for storage
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-basic
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: manual
+---
+# =============================================================================
+# 8. PVC WITH SELECTOR - Bind to specific PV using labels
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-with-selector
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  storageClassName: manual
+  selector:
+    matchLabels:
+      type: local
+---
+# =============================================================================
+# 9. POD WITH PVC - Using PersistentVolumeClaim
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-with-pvc
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: persistent-storage
+          mountPath: /usr/share/nginx/html
+  volumes:
+    - name: persistent-storage
+      persistentVolumeClaim:
+        claimName: pvc-basic
+---
+# =============================================================================
+# 10. STORAGECLASS - Dynamic provisioning
+# =============================================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: fast-storage
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+---
+# =============================================================================
+# 11. STORAGECLASS FOR CLOUD (AWS EBS Example)
+# =============================================================================
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: aws-gp3
+provisioner: ebs.csi.aws.com
+parameters:
+  type: gp3
+  iops: "3000"
+  throughput: "125"
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+allowVolumeExpansion: true
+---
+# =============================================================================
+# 12. PVC WITH STORAGECLASS - Dynamic provisioning
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-dynamic
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-storage
+---
+# =============================================================================
+# 13. POD WITH CONFIGMAP VOLUME
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+data:
+  config.properties: |
+    database.host=localhost
+    database.port=5432
+  app.json: |
+    {"debug": true, "level": "info"}
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-configmap-volume
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config
+  volumes:
+    - name: config-volume
+      configMap:
+        name: app-config
+---
+# =============================================================================
+# 14. POD WITH CONFIGMAP - Specific keys and permissions
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-configmap-items
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: config-volume
+          mountPath: /etc/config
+  volumes:
+    - name: config-volume
+      configMap:
+        name: app-config
+        items:
+          - key: config.properties
+            path: application.properties
+          - key: app.json
+            path: settings.json
+        defaultMode: 0644
+---
+# =============================================================================
+# 15. POD WITH SECRET VOLUME
+# =============================================================================
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secret
+type: Opaque
+data:
+  username: YWRtaW4=          # base64 encoded "admin"
+  password: cGFzc3dvcmQxMjM=  # base64 encoded "password123"
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-secret-volume
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: secret-volume
+          mountPath: /etc/secrets
+          readOnly: true
+  volumes:
+    - name: secret-volume
+      secret:
+        secretName: app-secret
+        defaultMode: 0400
+---
+# =============================================================================
+# 16. POD WITH SECRET - Specific keys
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-secret-items
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: secret-volume
+          mountPath: /etc/secrets
+          readOnly: true
+  volumes:
+    - name: secret-volume
+      secret:
+        secretName: app-secret
+        items:
+          - key: username
+            path: db-user
+          - key: password
+            path: db-pass
+---
+# =============================================================================
+# 17. POD WITH DOWNWARD API VOLUME - Expose pod metadata
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-downward-api
+  labels:
+    app: myapp
+    tier: frontend
+  annotations:
+    build: "v1.0.0"
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: podinfo
+          mountPath: /etc/podinfo
+  volumes:
+    - name: podinfo
+      downwardAPI:
+        items:
+          - path: labels
+            fieldRef:
+              fieldPath: metadata.labels
+          - path: annotations
+            fieldRef:
+              fieldPath: metadata.annotations
+          - path: name
+            fieldRef:
+              fieldPath: metadata.name
+          - path: namespace
+            fieldRef:
+              fieldPath: metadata.namespace
+          - path: cpu_limit
+            resourceFieldRef:
+              containerName: app
+              resource: limits.cpu
+          - path: mem_limit
+            resourceFieldRef:
+              containerName: app
+              resource: limits.memory
+---
+# =============================================================================
+# 18. POD WITH PROJECTED VOLUME - Combine multiple sources
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-projected-volume
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: all-in-one
+          mountPath: /projected-volume
+          readOnly: true
+  volumes:
+    - name: all-in-one
+      projected:
+        sources:
+          - secret:
+              name: app-secret
+              items:
+                - key: username
+                  path: secrets/username
+          - configMap:
+              name: app-config
+              items:
+                - key: config.properties
+                  path: config/app.properties
+          - downwardAPI:
+              items:
+                - path: metadata/labels
+                  fieldRef:
+                    fieldPath: metadata.labels
+---
+# =============================================================================
+# 19. POD WITH SUBPATH - Mount specific file without hiding directory
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-subpath
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: config-volume
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: data-volume
+          mountPath: /var/log/nginx
+          subPath: nginx-logs
+  volumes:
+    - name: config-volume
+      configMap:
+        name: nginx-config
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: pvc-basic
+---
+# =============================================================================
+# 20. POD WITH SUBPATHEXPR - Dynamic subpath using env variable
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-subpath-expr
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      env:
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+      volumeMounts:
+        - name: data-volume
+          mountPath: /var/log/app
+          subPathExpr: $(POD_NAME)
+  volumes:
+    - name: data-volume
+      persistentVolumeClaim:
+        claimName: pvc-basic
+---
+# =============================================================================
+# 21. POD WITH MULTIPLE VOLUMES
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-multi-volumes
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: cache
+          mountPath: /cache
+        - name: config
+          mountPath: /etc/config
+        - name: secrets
+          mountPath: /etc/secrets
+          readOnly: true
+        - name: persistent
+          mountPath: /data
+  volumes:
+    - name: cache
+      emptyDir: {}
+    - name: config
+      configMap:
+        name: app-config
+    - name: secrets
+      secret:
+        secretName: app-secret
+    - name: persistent
+      persistentVolumeClaim:
+        claimName: pvc-basic
+---
+# =============================================================================
+# 22. MULTI-CONTAINER POD SHARING VOLUME - Sidecar pattern with shared storage
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-shared-volume
+spec:
+  containers:
+    - name: writer
+      image: busybox:1.36
+      command: ["sh", "-c", "while true; do date >> /shared/log.txt; sleep 5; done"]
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+    - name: reader
+      image: busybox:1.36
+      command: ["sh", "-c", "tail -f /shared/log.txt"]
+      volumeMounts:
+        - name: shared-data
+          mountPath: /shared
+  volumes:
+    - name: shared-data
+      emptyDir: {}
+---
+# =============================================================================
+# 23. INIT CONTAINER WITH SHARED VOLUME
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-init-shared-volume
+spec:
+  initContainers:
+    - name: init-download
+      image: busybox:1.36
+      command: ["sh", "-c", "echo 'Downloaded content' > /work-dir/data.txt"]
+      volumeMounts:
+        - name: workdir
+          mountPath: /work-dir
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: workdir
+          mountPath: /usr/share/nginx/html
+  volumes:
+    - name: workdir
+      emptyDir: {}
+---
+# =============================================================================
+# 24. STATEFULSET WITH VOLUMECLAIMTEMPLATES - Dynamic PVC per replica
+# =============================================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: web-statefulset
+spec:
+  serviceName: web-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.25
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: www-storage
+              mountPath: /usr/share/nginx/html
+  volumeClaimTemplates:
+    - metadata:
+        name: www-storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 1Gi
+        storageClassName: fast-storage
+---
+# =============================================================================
+# 25. POD WITH READONLY VOLUME
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-readonly-volume
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeMounts:
+        - name: config
+          mountPath: /etc/config
+          readOnly: true
+        - name: data
+          mountPath: /data
+          readOnly: false
+  volumes:
+    - name: config
+      configMap:
+        name: app-config
+    - name: data
+      persistentVolumeClaim:
+        claimName: pvc-basic
+        readOnly: true
+---
+# =============================================================================
+# 26. PVC WITH VOLUME MODE - Block vs Filesystem
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-block-mode
+spec:
+  accessModes:
+    - ReadWriteOnce
+  volumeMode: Block    # Default is Filesystem
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: fast-storage
+---
+# =============================================================================
+# 27. POD WITH BLOCK VOLUME
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-block-volume
+spec:
+  containers:
+    - name: app
+      image: nginx:1.25
+      volumeDevices:
+        - name: block-vol
+          devicePath: /dev/xvda
+  volumes:
+    - name: block-vol
+      persistentVolumeClaim:
+        claimName: pvc-block-mode
+---
+# =============================================================================
+# 28. PVC EXPANSION - Resize existing volume
+# =============================================================================
+# First ensure StorageClass has allowVolumeExpansion: true
+# Then edit PVC:
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: pvc-expandable
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi    # Increased from 10Gi
+  storageClassName: fast-storage
+---
+# =============================================================================
+# 29. PV WITH NODE AFFINITY - Storage on specific nodes
+# =============================================================================
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-local-affinity
+spec:
+  capacity:
+    storage: 100Gi
+  accessModes:
+    - ReadWriteOnce
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: local-storage
+  local:
+    path: /mnt/disks/ssd1
+  nodeAffinity:
+    required:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: In
+              values:
+                - worker-node-1
+---
+# =============================================================================
+# 30. COMPREHENSIVE STORAGE POD - Combining multiple storage concepts
+# =============================================================================
+apiVersion: v1
+kind: Pod
+metadata:
+  name: comprehensive-storage-pod
+  namespace: production
+  labels:
+    app: storage-demo
+spec:
+  initContainers:
+    - name: init-permissions
+      image: busybox:1.36
+      command: ["sh", "-c", "chmod -R 755 /data && chown -R 1000:1000 /data"]
+      volumeMounts:
+        - name: persistent-data
+          mountPath: /data
+  containers:
+    - name: main-app
+      image: nginx:1.25
+      volumeMounts:
+        # Persistent storage
+        - name: persistent-data
+          mountPath: /var/www/html
+        # Configuration from ConfigMap
+        - name: config
+          mountPath: /etc/nginx/conf.d
+        # Secrets mounted as files
+        - name: secrets
+          mountPath: /etc/ssl/certs
+          readOnly: true
+        # Temporary cache
+        - name: cache
+          mountPath: /var/cache/nginx
+        # Pod metadata via downwardAPI
+        - name: podinfo
+          mountPath: /etc/podinfo
+          readOnly: true
+    - name: sidecar-backup
+      image: busybox:1.36
+      command: ["sh", "-c", "while true; do cp -r /data/* /backup/; sleep 3600; done"]
+      volumeMounts:
+        - name: persistent-data
+          mountPath: /data
+          readOnly: true
+        - name: backup-volume
+          mountPath: /backup
+  volumes:
+    # PVC for persistent data
+    - name: persistent-data
+      persistentVolumeClaim:
+        claimName: pvc-basic
+    # ConfigMap volume
+    - name: config
+      configMap:
+        name: nginx-config
+        defaultMode: 0644
+    # Secret volume
+    - name: secrets
+      secret:
+        secretName: tls-secret
+        defaultMode: 0400
+    # EmptyDir for cache
+    - name: cache
+      emptyDir:
+        sizeLimit: 500Mi
+    # Downward API
+    - name: podinfo
+      downwardAPI:
+        items:
+          - path: labels
+            fieldRef:
+              fieldPath: metadata.labels
+          - path: annotations
+            fieldRef:
+              fieldPath: metadata.annotations
+    # Second PVC for backups
+    - name: backup-volume
+      persistentVolumeClaim:
+        claimName: pvc-backup

@@ -45,6 +45,10 @@ spec:
 # =============================================================================
 # 4. POD WITH RESOURCE LIMITS AND REQUESTS - Critical for CKA/CKAD
 # =============================================================================
+# CATATAN: resources.requests/limits BUKAN referensi ke resource eksternal!
+# Ini adalah DEKLARASI kebutuhan resource container ke Kubernetes scheduler.
+# - requests: Minimum resource yang DIJAMIN oleh Kubernetes (untuk scheduling)
+# - limits: Maximum resource yang BOLEH digunakan container
 apiVersion: v1
 kind: Pod
 metadata:
@@ -54,12 +58,12 @@ spec:
     - name: nginx
       image: nginx:1.25
       resources:
-        requests:
-          memory: "64Mi"
-          cpu: "250m"
-        limits:
-          memory: "128Mi"
-          cpu: "500m"
+        requests:                    # Memberitahu scheduler: "Saya butuh minimal segini"
+          memory: "64Mi"             # Minimum RAM yang dijamin
+          cpu: "250m"                # Minimum CPU yang dijamin (250 millicore = 0.25 core)
+        limits:                      # Memberitahu kubelet: "Jangan biarkan saya pakai lebih dari ini"
+          memory: "128Mi"            # Maximum RAM (jika melebihi = OOMKilled)
+          cpu: "500m"                # Maximum CPU (jika melebihi = throttled)
 ---
 # =============================================================================
 # 5. POD WITH ENVIRONMENT VARIABLES
@@ -73,22 +77,28 @@ spec:
     - name: nginx
       image: nginx:1.25
       env:
+        # Static value - nilai langsung didefinisikan di sini
         - name: APP_ENV
           value: "production"
         - name: LOG_LEVEL
           value: "info"
+        # Downward API - mengambil nilai dari metadata Pod ini sendiri
         - name: POD_NAME
           valueFrom:
             fieldRef:
-              fieldPath: metadata.name
+              fieldPath: metadata.name        # Mengambil dari: Pod.metadata.name (nama pod ini)
         - name: POD_NAMESPACE
           valueFrom:
             fieldRef:
-              fieldPath: metadata.namespace
+              fieldPath: metadata.namespace   # Mengambil dari: Pod.metadata.namespace (namespace pod ini)
 ---
 # =============================================================================
 # 6. POD WITH CONFIGMAP AND SECRET REFERENCES
 # =============================================================================
+# PRASYARAT: ConfigMap dan Secret HARUS sudah ada sebelum Pod dibuat!
+# Buat dulu dengan:
+#   kubectl create configmap app-config --from-literal=config-key=config-value
+#   kubectl create secret generic app-secret --from-literal=password=secretpass
 apiVersion: v1
 kind: Pod
 metadata:
@@ -98,21 +108,25 @@ spec:
     - name: app
       image: nginx:1.25
       env:
+        # Mengambil SATU key dari ConfigMap
         - name: CONFIG_VALUE
           valueFrom:
             configMapKeyRef:
-              name: app-config
-              key: config-key
+              name: app-config             # Referensi ke: ConfigMap bernama "app-config"
+              key: config-key              # Mengambil value dari key "config-key"
+        # Mengambil SATU key dari Secret
         - name: SECRET_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: app-secret
-              key: password
+              name: app-secret             # Referensi ke: Secret bernama "app-secret"
+              key: password                # Mengambil value dari key "password"
       envFrom:
+        # Mengambil SEMUA key-value dari ConfigMap sebagai env vars
         - configMapRef:
-            name: app-config
+            name: app-config               # Referensi ke: ConfigMap bernama "app-config"
+        # Mengambil SEMUA key-value dari Secret sebagai env vars
         - secretRef:
-            name: app-secret
+            name: app-secret               # Referensi ke: Secret bernama "app-secret"
 ---
 # =============================================================================
 # 7. POD WITH LIVENESS AND READINESS PROBES - Very important for exams
@@ -242,33 +256,44 @@ spec:
 # =============================================================================
 # 13. POD WITH INIT CONTAINER
 # =============================================================================
+# Init containers berjalan SEBELUM main container, secara BERURUTAN.
+# Berguna untuk: setup, menunggu dependency, download config, dll.
 apiVersion: v1
 kind: Pod
 metadata:
   name: pod-with-init
 spec:
   initContainers:
+    # Init container 1: Setup awal (berjalan pertama)
     - name: init-setup
       image: busybox:1.36
       command: ["sh", "-c", "echo 'Initializing...' && sleep 5"]
+    # Init container 2: Menunggu Service "myservice" tersedia (berjalan kedua)
+    # PRASYARAT: Service "myservice" harus ada di cluster agar init selesai!
+    #   kubectl create service clusterip myservice --tcp=80:80
     - name: init-wait-service
       image: busybox:1.36
       command: ["sh", "-c", "until nslookup myservice; do echo waiting...; sleep 2; done"]
   containers:
+    # Main container: Baru jalan setelah SEMUA init containers selesai
     - name: main-app
       image: nginx:1.25
 ---
 # =============================================================================
 # 14. POD WITH NODE SELECTOR
 # =============================================================================
+# PRASYARAT: Node HARUS sudah memiliki label yang sesuai!
+# Tambahkan label ke node dengan:
+#   kubectl label nodes <node-name> disktype=ssd
+#   kubectl label nodes <node-name> environment=production
 apiVersion: v1
 kind: Pod
 metadata:
   name: pod-with-nodeselector
 spec:
-  nodeSelector:
-    disktype: ssd
-    environment: production
+  nodeSelector:                            # Pod HANYA akan dijadwalkan ke node yang memiliki SEMUA label ini
+    disktype: ssd                          # Node harus punya label: disktype=ssd
+    environment: production                # Node harus punya label: environment=production
   containers:
     - name: nginx
       image: nginx:1.25
@@ -276,6 +301,8 @@ spec:
 # =============================================================================
 # 15. POD WITH NODE AFFINITY
 # =============================================================================
+# PRASYARAT: Node HARUS sudah memiliki label yang sesuai!
+# Node affinity lebih fleksibel dari nodeSelector (mendukung operator: In, NotIn, Exists, dll)
 apiVersion: v1
 kind: Pod
 metadata:
@@ -283,19 +310,21 @@ metadata:
 spec:
   affinity:
     nodeAffinity:
+      # REQUIRED: Pod WAJIB dijadwalkan ke node yang memenuhi syarat ini
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
           - matchExpressions:
-              - key: topology.kubernetes.io/zone
+              - key: topology.kubernetes.io/zone   # Node harus punya label topology.kubernetes.io/zone
                 operator: In
                 values:
-                  - zone-a
+                  - zone-a                         # dengan value zone-a ATAU zone-b
                   - zone-b
+      # PREFERRED: Scheduler akan COBA jadwalkan ke node ini, tapi tidak wajib
       preferredDuringSchedulingIgnoredDuringExecution:
-        - weight: 100
+        - weight: 100                              # Bobot preferensi (1-100)
           preference:
             matchExpressions:
-              - key: disktype
+              - key: disktype                      # Lebih suka node dengan disktype=ssd
                 operator: In
                 values:
                   - ssd
@@ -306,6 +335,9 @@ spec:
 # =============================================================================
 # 16. POD WITH POD AFFINITY AND ANTI-AFFINITY
 # =============================================================================
+# Pod Affinity: Jadwalkan Pod ini DEKAT dengan Pod lain yang memenuhi kriteria
+# Pod Anti-Affinity: Jadwalkan Pod ini JAUH dari Pod lain yang memenuhi kriteria
+# PRASYARAT: Harus ada Pod lain dengan label yang direferensikan!
 apiVersion: v1
 kind: Pod
 metadata:
@@ -314,23 +346,25 @@ metadata:
     app: cache
 spec:
   affinity:
+    # Pod Affinity: Jadwalkan DEKAT dengan pod tertentu
     podAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
         - labelSelector:
             matchExpressions:
-              - key: app
+              - key: app                           # Cari Pod yang punya label app=web
                 operator: In
                 values:
-                  - web
-          topologyKey: kubernetes.io/hostname
+                  - web                            # PRASYARAT: Harus ada Pod dengan label app=web
+          topologyKey: kubernetes.io/hostname      # "Dekat" = di node yang sama
+    # Pod Anti-Affinity: Jadwalkan JAUH dari pod tertentu
     podAntiAffinity:
       preferredDuringSchedulingIgnoredDuringExecution:
         - weight: 100
           podAffinityTerm:
             labelSelector:
               matchLabels:
-                app: cache
-            topologyKey: kubernetes.io/hostname
+                app: cache                         # Hindari Pod lain dengan label app=cache
+            topologyKey: kubernetes.io/hostname    # "Jauh" = di node yang berbeda
   containers:
     - name: redis
       image: redis:7
@@ -338,20 +372,26 @@ spec:
 # =============================================================================
 # 17. POD WITH TOLERATIONS - For tainted nodes
 # =============================================================================
+# KONTEKS: Tolerations memungkinkan Pod dijadwalkan ke node yang memiliki TAINT.
+# Taint pada node dibuat dengan:
+#   kubectl taint nodes <node-name> dedicated=gpu:NoSchedule
+# Tanpa toleration yang cocok, Pod tidak bisa dijadwalkan ke node tersebut.
 apiVersion: v1
 kind: Pod
 metadata:
   name: pod-with-tolerations
 spec:
   tolerations:
-    - key: "dedicated"
-      operator: "Equal"
-      value: "gpu"
-      effect: "NoSchedule"
-    - key: "node.kubernetes.io/not-ready"
-      operator: "Exists"
+    # Tolerasi untuk taint: dedicated=gpu:NoSchedule
+    - key: "dedicated"                     # Mencocokkan taint dengan key "dedicated"
+      operator: "Equal"                    # Operator: Equal (key DAN value harus cocok)
+      value: "gpu"                         # Mencocokkan value "gpu"
+      effect: "NoSchedule"                 # Mencocokkan effect NoSchedule
+    # Tolerasi untuk node yang not-ready (built-in taint dari Kubernetes)
+    - key: "node.kubernetes.io/not-ready"  # Taint otomatis saat node tidak ready
+      operator: "Exists"                   # Operator: Exists (cukup key-nya ada, value diabaikan)
       effect: "NoExecute"
-      tolerationSeconds: 300
+      tolerationSeconds: 300               # Toleransi 300 detik sebelum Pod di-evict
   containers:
     - name: nginx
       image: nginx:1.25
@@ -382,13 +422,16 @@ spec:
 # =============================================================================
 # 19. POD WITH SERVICE ACCOUNT
 # =============================================================================
+# PRASYARAT: ServiceAccount HARUS sudah ada sebelum Pod dibuat!
+# Buat dulu dengan:
+#   kubectl create serviceaccount my-service-account
 apiVersion: v1
 kind: Pod
 metadata:
   name: pod-with-serviceaccount
 spec:
-  serviceAccountName: my-service-account
-  automountServiceAccountToken: true
+  serviceAccountName: my-service-account   # Referensi ke: ServiceAccount bernama "my-service-account"
+  automountServiceAccountToken: true       # Mount token SA ke /var/run/secrets/kubernetes.io/serviceaccount
   containers:
     - name: app
       image: nginx:1.25
@@ -454,11 +497,16 @@ spec:
 # =============================================================================
 # 24. COMPREHENSIVE POD - COMBINING MULTIPLE CONCEPTS
 # =============================================================================
+# PRASYARAT untuk menjalankan pod ini:
+#   1. kubectl create namespace production
+#   2. kubectl create serviceaccount app-service-account -n production
+#   3. kubectl label nodes <node-name> environment=production
+#   4. kubectl taint nodes <node-name> dedicated=app:NoSchedule (opsional)
 apiVersion: v1
 kind: Pod
 metadata:
   name: comprehensive-pod
-  namespace: production
+  namespace: production                    # PRASYARAT: Namespace "production" harus ada
   labels:
     app: myapp
     tier: backend
@@ -466,16 +514,16 @@ metadata:
   annotations:
     description: "Comprehensive pod example for CKA/CKAD"
 spec:
-  serviceAccountName: app-service-account
+  serviceAccountName: app-service-account  # PRASYARAT: ServiceAccount harus ada di namespace ini
   restartPolicy: Always
-  securityContext:
+  securityContext:                         # Security context level Pod (berlaku untuk semua container)
     runAsUser: 1000
     runAsGroup: 1000
     fsGroup: 1000
   nodeSelector:
-    environment: production
+    environment: production                # PRASYARAT: Node harus punya label environment=production
   tolerations:
-    - key: "dedicated"
+    - key: "dedicated"                     # Toleransi untuk taint dedicated=app:NoSchedule
       operator: "Equal"
       value: "app"
       effect: "NoSchedule"
@@ -493,10 +541,10 @@ spec:
         - name: POD_NAME
           valueFrom:
             fieldRef:
-              fieldPath: metadata.name
+              fieldPath: metadata.name     # Downward API: mengambil nama Pod ini
         - name: APP_ENV
-          value: "production"
-      resources:
+          value: "production"              # Static value
+      resources:                           # Deklarasi kebutuhan resource ke scheduler
         requests:
           cpu: "100m"
           memory: "128Mi"
@@ -515,7 +563,7 @@ spec:
           port: 80
         initialDelaySeconds: 5
         periodSeconds: 5
-      securityContext:
+      securityContext:                     # Security context level container
         allowPrivilegeEscalation: false
         readOnlyRootFilesystem: false
     - name: sidecar-logger
